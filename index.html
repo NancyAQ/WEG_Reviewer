@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WEG Reviewer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Upload Screen ─────────────────────────────────────────────────── -->
+  <div id="upload-screen">
+    <div class="upload-hero">
+      <div class="brand">
+        <div class="brand-icon">⚙</div>
+        <h1>WEG Reviewer</h1>
+        <p>Upload, review, and edit Workflow Executable Guides</p>
+      </div>
+      <div id="drop-zone">
+        <div class="dz-content">
+          <p class="dz-title">Drop your WEG JSON here</p>
+          <p class="dz-sub">or</p>
+          <button id="browse-btn">Choose File</button>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".json" />
+      <p class="dz-hint">Supports WEG v1 and v2 · Downloads reviewed copy on export</p>
+    </div>
+  </div>
+
+  <!-- ── Review Screen ─────────────────────────────────────────────────── -->
+  <div id="review-screen" class="hidden">
+
+    <header class="topbar">
+      <div class="topbar-l">
+        <button id="back-btn">← New File</button>
+        <span id="file-badge"></span>
+      </div>
+      <div class="topbar-c" id="guide-title-display"></div>
+      <div class="topbar-r">
+        <span id="imgs-status" class="imgs-status"></span>
+        <button id="load-imgs-btn" class="imgs-btn">Load Images</button>
+        <span id="change-count" class="change-pill">0 changes</span>
+        <button id="download-btn">Download WEG</button>
+      </div>
+      <input type="file" id="imgs-folder-input" webkitdirectory multiple />
+    </header>
+
+    <div class="layout">
+
+      <!-- Sidebar -->
+      <nav class="sidebar">
+        <button class="nav-item" id="nav-header" data-target="header">
+          <span>Header</span>
+        </button>
+        <div class="nav-divider">Steps</div>
+        <div id="step-nav"></div>
+      </nav>
+
+      <!-- Main -->
+      <main class="content">
+        <div id="header-view"></div>
+        <div id="step-view" class="hidden"></div>
+      </main>
+
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
