@@ -1,3 +1,33 @@
+/* ── Change Logger ─────────────────────────────────────────────────────────── */
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4r8BhwrxqTOhGZncJ6fEHfiJFcrA_hWUwgd3JqFgCFrwJAF3V4o62-O0at-MLPOVY/exec';
+
+function getReviewerName() {
+  let name = localStorage.getItem('weg_reviewer_name');
+  if (!name) {
+    name = prompt('Enter your name for change tracking (saved locally):') || 'anonymous';
+    localStorage.setItem('weg_reviewer_name', name);
+  }
+  return name;
+}
+
+function logChange(guideId, stepId, field, oldValue, newValue) {
+  if (String(oldValue) === String(newValue)) return;
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      timestamp : new Date().toISOString().slice(0, 19).replace('T', ' '),
+      user      : getReviewerName(),
+      guide_id  : String(guideId  ?? ''),
+      step_id   : String(stepId   ?? ''),
+      field,
+      old_value : String(oldValue ?? ''),
+      new_value : String(newValue ?? ''),
+    }),
+  }).catch(() => {});
+}
+
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let weg          = null;
 let fileName     = 'weg.json';
@@ -256,12 +286,15 @@ function renderHeader() {
     </div>`;
 
   view.querySelectorAll('.editable[data-path]').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
     el.addEventListener('change', () => {
+      const old = el.dataset.prev ?? '';
       let v = el.value;
       if (el.type === 'number') v = v !== '' ? Number(v) : null;
       setPath(weg, el.dataset.path, v);
       if (el.dataset.path === 'header.title')
         document.getElementById('guide-title-display').textContent = v;
+      logChange(weg.header?.guide_id, 'header', el.dataset.path, old, el.value);
       bump();
     });
   });
@@ -354,24 +387,30 @@ function renderStep(index) {
 function bindStepEvents(view, index) {
   /* Simple step fields */
   view.querySelectorAll('[data-sf]').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
     el.addEventListener('change', () => {
+      const old = el.dataset.prev ?? '';
       weg.steps[index][el.dataset.sf] = el.value;
       if (el.dataset.sf === 'task_name') updateSidebarLabel(index);
+      logChange(weg.header?.guide_id, weg.steps[index]?.step_id, el.dataset.sf, old, el.value);
       bump();
     });
   });
 
   /* AQ table */
   view.querySelectorAll('.aq-input, .aq-select').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
     el.addEventListener('change', () => {
       const row = parseInt(el.dataset.row), field = el.dataset.field;
       const aq  = weg.steps[index].action_quadruples;
       if (!aq?.[row]) return;
+      const old = el.dataset.prev ?? '';
       let v = el.value;
       if (field === 'hands')   v = parseInt(v);
       if (field === 'part_id') v = v !== '' ? parseInt(v) : null;
       if ((field === 'tool' || field === 'precise_action' || field === 'part') && v === '') v = null;
       aq[row][field] = v;
+      logChange(weg.header?.guide_id, weg.steps[index]?.step_id, field, old, el.value);
       bump();
     });
   });
@@ -388,31 +427,40 @@ function bindStepEvents(view, index) {
 
   view.querySelectorAll('.del-row-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      weg.steps[index].action_quadruples.splice(parseInt(btn.dataset.row), 1);
+      const row = parseInt(btn.dataset.row);
+      const q   = weg.steps[index].action_quadruples?.[row];
+      if (q) logChange(weg.header?.guide_id, weg.steps[index]?.step_id, 'quadruple_deleted', `[${q.action}] ${q.component}`, '');
+      weg.steps[index].action_quadruples.splice(row, 1);
       bump(); renderStep(index);
     });
   });
 
   /* Parts */
   view.querySelectorAll('.part-input').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
     el.addEventListener('change', () => {
       const i = parseInt(el.dataset.part), field = el.dataset.field;
       const p = weg.steps[index].parts_all?.[i];
       if (!p) return;
+      const old = el.dataset.prev ?? '';
       if (field === 'confidence') p[field] = el.value !== '' ? parseFloat(el.value) : null;
       else if (field === 'part_id') p[field] = parseInt(el.value) || 1;
       else p[field] = el.value;
+      logChange(weg.header?.guide_id, weg.steps[index]?.step_id, `part_${field}`, old, el.value);
       bump();
     });
   });
 
   view.querySelectorAll('.bbox-input').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
     el.addEventListener('change', () => {
       const i = parseInt(el.dataset.part), coord = el.dataset.bbox;
       const p = weg.steps[index].parts_all?.[i];
       if (!p) return;
       if (!p.bbox) p.bbox = { x1:0, y1:0, x2:0, y2:0 };
+      const old = el.dataset.prev ?? '';
       p.bbox[coord] = parseInt(el.value) || 0;
+      logChange(weg.header?.guide_id, weg.steps[index]?.step_id, `bbox_${coord}:${p.name}`, old, el.value);
       bump();
       redrawCanvas(index);  // live update the canvas
     });
@@ -420,7 +468,10 @@ function bindStepEvents(view, index) {
 
   view.querySelectorAll('.part-del-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      weg.steps[index].parts_all.splice(parseInt(btn.dataset.part), 1);
+      const i = parseInt(btn.dataset.part);
+      const p = weg.steps[index].parts_all?.[i];
+      if (p) logChange(weg.header?.guide_id, weg.steps[index]?.step_id, 'part_deleted', p.name, '');
+      weg.steps[index].parts_all.splice(i, 1);
       bump(); renderStep(index);
     });
   });
@@ -638,7 +689,9 @@ function initCanvas(stepIndex) {
     /* Save to WEG */
     const part = weg.steps[stepIndex]?.parts_all?.[annot.partIndex];
     if (part) {
+      const oldBbox = JSON.stringify(part.bbox ?? {});
       part.bbox = bbox;
+      logChange(weg.header?.guide_id, weg.steps[stepIndex]?.step_id, `bbox:${part.name}`, oldBbox, JSON.stringify(bbox));
       bump();
       syncBboxInputs(stepIndex, annot.partIndex, bbox);
       showToast(`✓ BBox set for "${part.name}"`, 'success');

@@ -1,0 +1,8 @@
+# Service account credentials — never commit private keys
+credentials/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
