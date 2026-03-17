@@ -637,10 +637,12 @@ function bindAnnotationEvents(view, stepIndex) {
 
   /* Add Part from legend panel */
   view.querySelector('.add-part-legend-btn')?.addEventListener('click', () => {
+    const name = prompt('Part name:');
+    if (!name) return;
     if (!weg.steps[stepIndex].parts_all) weg.steps[stepIndex].parts_all = [];
     const newId = weg.steps[stepIndex].parts_all.length + 1;
     weg.steps[stepIndex].parts_all.push({
-      part_id: newId, name: `part_${newId}`,
+      part_id: newId, name: name.trim(),
       bbox: { x1: 0, y1: 0, x2: 100, y2: 100 },
       confidence: 0.9, image_path: '',
     });
