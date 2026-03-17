@@ -950,22 +950,36 @@ textarea.editable {
   line-height: 1.4;
 }
 
-.add-part-legend-btn {
-  width: 100%;
+.add-part-row {
+  display: flex;
+  gap: 4px;
   margin-top: 8px;
-  padding: 6px 0;
+}
+.add-part-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 7px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+}
+.add-part-name-input:focus { outline: none; border-color: var(--accent); }
+.add-part-legend-btn {
+  padding: 5px 10px;
   background: transparent;
-  border: 1px dashed var(--border);
+  border: 1px solid var(--accent);
   border-radius: 6px;
   color: var(--accent2);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  transition: background 0.15s;
 }
 .add-part-legend-btn:hover {
-  background: rgba(99,102,241,0.10);
-  border-color: var(--accent2);
+  background: rgba(99,102,241,0.15);
 }
 
 .no-imgs-msg {

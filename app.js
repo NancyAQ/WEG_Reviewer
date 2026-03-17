@@ -603,7 +603,10 @@ function makeAnnotationCard(step, stepIndex) {
         <div class="part-legend-panel" id="part-legend-${stepIndex}">
           <div class="legend-title">Parts</div>
           ${legend}
-          <button class="add-part-legend-btn">+ Add Part</button>
+          <div class="add-part-row">
+            <input class="add-part-name-input" type="text" placeholder="Part name…" />
+            <button class="add-part-legend-btn">Add</button>
+          </div>
           <div class="legend-hint">Click to select · draw bbox · click again to deselect</div>
         </div>
       </div>
@@ -637,16 +640,21 @@ function bindAnnotationEvents(view, stepIndex) {
 
   /* Add Part from legend panel */
   view.querySelector('.add-part-legend-btn')?.addEventListener('click', () => {
-    const name = prompt('Part name:');
-    if (!name) return;
+    const input = view.querySelector('.add-part-name-input');
+    const name  = input?.value.trim();
+    if (!name) { input?.focus(); return; }
     if (!weg.steps[stepIndex].parts_all) weg.steps[stepIndex].parts_all = [];
     const newId = weg.steps[stepIndex].parts_all.length + 1;
     weg.steps[stepIndex].parts_all.push({
-      part_id: newId, name: name.trim(),
+      part_id: newId, name,
       bbox: { x1: 0, y1: 0, x2: 100, y2: 100 },
       confidence: 0.9, image_path: '',
     });
     bump(); renderStep(stepIndex);
+  });
+
+  view.querySelector('.add-part-name-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') view.querySelector('.add-part-legend-btn')?.click();
   });
 
   /* Init canvas after image loads */
@@ -1080,21 +1088,25 @@ async function saveToCloud() {
 
     btn.textContent = 'Uploading…';
 
+    const payload = {
+      type           : 'save_weg_full',
+      root_folder_id : DRIVE_FOLDER_ID,
+      weg_name       : wegName,
+      guide_id       : guideId,
+      reviewer       : getReviewerName(),
+      saved_at       : new Date().toISOString().slice(0, 19).replace('T', ' '),
+      weg_json       : JSON.stringify(weg, null, 2),
+      images,
+    };
+    console.log('[saveToCloud] sending payload, images:', images.length, 'payload size (kb):', Math.round(JSON.stringify(payload).length / 1024));
+
     await fetch(APPS_SCRIPT_URL, {
       method : 'POST',
       mode   : 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({
-        type           : 'save_weg_full',
-        root_folder_id : DRIVE_FOLDER_ID,
-        weg_name       : wegName,
-        guide_id       : guideId,
-        reviewer       : getReviewerName(),
-        saved_at       : new Date().toISOString().slice(0, 19).replace('T', ' '),
-        weg_json       : JSON.stringify(weg, null, 2),
-        images,
-      }),
+      headers: { 'Content-Type': 'text/plain' },
+      body   : JSON.stringify(payload),
     });
+    console.log('[saveToCloud] fetch completed');
 
     showToast('✓ Saved to Drive!', 'success');
     btn.textContent = '✓ Saved to Cloud';
