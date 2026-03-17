@@ -1,6 +1,9 @@
 /* ── Change Logger ─────────────────────────────────────────────────────────── */
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4r8BhwrxqTOhGZncJ6fEHfiJFcrA_hWUwgd3JqFgCFrwJAF3V4o62-O0at-MLPOVY/exec';
 
+// Google Drive folder ID where reviewed WEGs are saved
+const DRIVE_FOLDER_ID = '19pOrBUKYZKx6ZHtfXt12Qn3V60BeIhPj';
+
 function getReviewerName() {
   let name = localStorage.getItem('weg_reviewer_name');
   if (!name) {
@@ -59,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFolderPicker();
   document.getElementById('back-btn').addEventListener('click', goHome);
   document.getElementById('download-btn').addEventListener('click', downloadWEG);
+  document.getElementById('save-cloud-btn').addEventListener('click', saveToCloud);
   document.getElementById('nav-header').addEventListener('click', showHeaderView);
 });
 
@@ -967,6 +971,43 @@ function downloadWEG() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('✓ Downloaded!', 'success');
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SAVE TO CLOUD (Google Drive via Apps Script)
+   ════════════════════════════════════════════════════════════════════════════ */
+async function saveToCloud() {
+  if (!weg) return;
+
+  const btn = document.getElementById('save-cloud-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  const saveName = fileName.replace(/\.json$/i, '_reviewed.json');
+
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type      : 'save_weg',
+        file_name : saveName,
+        folder_id : DRIVE_FOLDER_ID,
+        reviewer  : getReviewerName(),
+        guide_id  : String(weg.header?.guide_id ?? ''),
+        saved_at  : new Date().toISOString().slice(0, 19).replace('T', ' '),
+        weg_json  : JSON.stringify(weg, null, 2),
+      }),
+    });
+    showToast('✓ Saved to Drive!', 'success');
+    btn.textContent = '✓ Saved to Cloud';
+  } catch (err) {
+    showToast('Failed to save to cloud', 'error');
+    btn.textContent = 'Save to Cloud';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
