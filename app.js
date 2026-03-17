@@ -1088,11 +1088,14 @@ async function saveToCloud() {
 
     btn.textContent = 'Uploading…';
 
+    const saveFileName = fileName.replace(/\.json$/i, '_reviewed.json');
+
     const payload = {
       type           : 'save_weg_full',
       root_folder_id : DRIVE_FOLDER_ID,
       weg_name       : wegName,
       guide_id       : guideId,
+      weg_file_name  : saveFileName,
       reviewer       : getReviewerName(),
       saved_at       : new Date().toISOString().slice(0, 19).replace('T', ' '),
       weg_json       : JSON.stringify(weg, null, 2),
