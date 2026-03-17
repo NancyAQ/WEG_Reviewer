@@ -90,11 +90,23 @@ function handleFile(file) {
   if (!file.name.endsWith('.json')) { showToast('Please upload a .json file', 'error'); return; }
   fileName = file.name;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
-      weg = JSON.parse(e.target.result);
+      const parsed  = JSON.parse(e.target.result);
+      const guideId = String(parsed.header?.guide_id ?? '');
+
+      if (guideId) {
+        const exists = await checkGuideIdExists(guideId);
+        if (exists) {
+          const proceed = confirm(
+            `Guide ID ${guideId} already exists in the shared Drive.\n\nChoose a different WEG or click OK to open it anyway.`
+          );
+          if (!proceed) return;
+        }
+      }
+
+      weg = parsed;
       changeCount = 0;
-      // Clear any previously loaded images
       imageFiles.clear();
       stepImgCache = {};
       document.getElementById('imgs-status').textContent = '';
@@ -105,6 +117,17 @@ function handleFile(file) {
     }
   };
   reader.readAsText(file);
+}
+
+async function checkGuideIdExists(guideId) {
+  try {
+    const url = `${APPS_SCRIPT_URL}?type=check_guide_id&guide_id=${encodeURIComponent(guideId)}&root_folder_id=${encodeURIComponent(DRIVE_FOLDER_ID)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    return data.exists === true;
+  } catch {
+    return false; // if check fails, don't block the user
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
