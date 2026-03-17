@@ -1100,13 +1100,13 @@ async function saveToCloud() {
     };
     console.log('[saveToCloud] sending payload, images:', images.length, 'payload size (kb):', Math.round(JSON.stringify(payload).length / 1024));
 
-    await fetch(APPS_SCRIPT_URL, {
+    const res  = await fetch(APPS_SCRIPT_URL, {
       method : 'POST',
-      mode   : 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
       body   : JSON.stringify(payload),
     });
-    console.log('[saveToCloud] fetch completed');
+    const text = await res.text();
+    console.log('[saveToCloud] response:', text);
 
     showToast('✓ Saved to Drive!', 'success');
     btn.textContent = '✓ Saved to Cloud';
