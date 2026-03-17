@@ -546,7 +546,7 @@ function makeAnnotationCard(step, stepIndex) {
           <span class="legend-dot" style="background:${pc(i)}"></span>
           <span class="legend-name">${esc(p.name || `Part ${p.part_id ?? i+1}`)}</span>
         </button>`).join('')
-    : `<p style="color:var(--text3);font-size:12px">Add parts below first</p>`;
+    : `<p style="color:var(--text3);font-size:12px;margin:0">No parts yet — click + Add Part</p>`;
 
   const multiNav = imgs.length > 1 ? `
     <div class="img-nav">
@@ -580,6 +580,7 @@ function makeAnnotationCard(step, stepIndex) {
         <div class="part-legend-panel" id="part-legend-${stepIndex}">
           <div class="legend-title">Parts</div>
           ${legend}
+          <button class="add-part-legend-btn">+ Add Part</button>
           <div class="legend-hint">Click to select · draw bbox · click again to deselect</div>
         </div>
       </div>
@@ -609,6 +610,18 @@ function bindAnnotationEvents(view, stepIndex) {
         selectAnnotPart(stepIndex, i);
       }
     });
+  });
+
+  /* Add Part from legend panel */
+  view.querySelector('.add-part-legend-btn')?.addEventListener('click', () => {
+    if (!weg.steps[stepIndex].parts_all) weg.steps[stepIndex].parts_all = [];
+    const newId = weg.steps[stepIndex].parts_all.length + 1;
+    weg.steps[stepIndex].parts_all.push({
+      part_id: newId, name: `part_${newId}`,
+      bbox: { x1: 0, y1: 0, x2: 100, y2: 100 },
+      confidence: 0.9, image_path: '',
+    });
+    bump(); renderStep(stepIndex);
   });
 
   /* Init canvas after image loads */
@@ -981,30 +994,89 @@ async function saveToCloud() {
 
   const btn = document.getElementById('save-cloud-btn');
   btn.disabled = true;
-  btn.textContent = 'Saving…';
-
-  const saveName = fileName.replace(/\.json$/i, '_reviewed.json');
+  btn.textContent = 'Preparing…';
 
   try {
+    /* ── Collect annotated images for every step ── */
+    const images = [];
+    for (let idx = 0; idx < weg.steps.length; idx++) {
+      const step    = weg.steps[idx];
+      const stepId  = step.step_id ?? idx + 1;
+      const imgList = stepImgCache[idx] || getStepImages(stepId);
+      if (!imgList.length) continue;
+
+      for (let imgN = 0; imgN < imgList.length; imgN++) {
+        const imgEl = new Image();
+        await new Promise(resolve => {
+          imgEl.onload = imgEl.onerror = resolve;
+          imgEl.src = imgList[imgN].url;
+        });
+        if (!imgEl.naturalWidth) continue;
+
+        /* Draw image + bbox annotations on off-screen canvas */
+        const offCanvas  = document.createElement('canvas');
+        offCanvas.width  = imgEl.naturalWidth;
+        offCanvas.height = imgEl.naturalHeight;
+        const ctx = offCanvas.getContext('2d');
+        ctx.drawImage(imgEl, 0, 0);
+
+        (step.parts_all || []).forEach((p, i) => {
+          if (!p.bbox) return;
+          const { x1, y1, x2, y2 } = p.bbox;
+          const col = pc(i);
+          ctx.save();
+          ctx.strokeStyle = col;
+          ctx.fillStyle   = col + '22';
+          ctx.lineWidth   = 2;
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+          ctx.fillRect(x1,   y1, x2 - x1, y2 - y1);
+          const label = p.name || `Part ${p.part_id ?? i + 1}`;
+          ctx.font      = 'bold 13px sans-serif';
+          const tw      = ctx.measureText(label).width;
+          ctx.fillStyle = '#000a';
+          ctx.fillRect(x1, y1 - 18, tw + 10, 18);
+          ctx.fillStyle = col;
+          ctx.fillText(label, x1 + 5, y1 - 4);
+          ctx.restore();
+        });
+
+        const b64      = offCanvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+        const taskSlug = (step.task_name || `step_${stepId}`)
+          .replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+        const suffix   = imgList.length > 1 ? `_${imgN + 1}` : '';
+        images.push({ name: `step_${stepId}_${taskSlug}${suffix}.jpg`, data: b64 });
+      }
+    }
+
+    /* ── Folder / file names ── */
+    const wegName = (weg.header?.title || fileName.replace(/\.json$/i, ''))
+      .replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 60);
+    const guideId = String(weg.header?.guide_id ?? 'unknown');
+
+    btn.textContent = 'Uploading…';
+
     await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors',
+      method : 'POST',
+      mode   : 'no-cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type      : 'save_weg',
-        file_name : saveName,
-        folder_id : DRIVE_FOLDER_ID,
-        reviewer  : getReviewerName(),
-        guide_id  : String(weg.header?.guide_id ?? ''),
-        saved_at  : new Date().toISOString().slice(0, 19).replace('T', ' '),
-        weg_json  : JSON.stringify(weg, null, 2),
+      body   : JSON.stringify({
+        type           : 'save_weg_full',
+        root_folder_id : DRIVE_FOLDER_ID,
+        weg_name       : wegName,
+        guide_id       : guideId,
+        reviewer       : getReviewerName(),
+        saved_at       : new Date().toISOString().slice(0, 19).replace('T', ' '),
+        weg_json       : JSON.stringify(weg, null, 2),
+        images,
       }),
     });
+
     showToast('✓ Saved to Drive!', 'success');
     btn.textContent = '✓ Saved to Cloud';
   } catch (err) {
     showToast('Failed to save to cloud', 'error');
     btn.textContent = 'Save to Cloud';
+    console.error(err);
   } finally {
     btn.disabled = false;
   }
