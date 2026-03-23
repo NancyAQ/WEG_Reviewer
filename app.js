@@ -44,6 +44,7 @@ let stepImgCache = {};          // stepIndex → [{ name, url }]
 const annot = {
   stepIndex:  null,
   partIndex:  null,   // which part is being annotated (null = none selected)
+  addMode:    false,  // true = add new bbox; false = replace existing for current image
   drawing:    false,
   sx: 0, sy: 0,       // drag start in canvas pixels
 };
@@ -517,14 +518,14 @@ function bindStepEvents(view, index) {
     });
   });
 
-  /* + button: activate draw mode for that part */
+  /* + button in parts card: add mode */
   view.querySelectorAll('.bbox-add-draw-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const i = parseInt(btn.dataset.part);
+      annot.addMode = true;
       selectAnnotPart(index, i);
       document.getElementById(`annot-canvas-${index}`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      showToast(`Draw a bbox for "${weg.steps[index].parts_all[i]?.name}"`, 'info');
     });
   });
 
@@ -601,11 +602,14 @@ function makeAnnotationCard(step, stepIndex) {
     ? parts.map((p, i) => {
         const count = (p.bboxes || []).length;
         return `
-        <button class="part-legend-item" data-part-annot="${i}" style="--pc:${pc(i)}">
-          <span class="legend-dot" style="background:${pc(i)}"></span>
-          <span class="legend-name">${esc(p.name || `Part ${p.part_id ?? i+1}`)}</span>
-          ${count ? `<span class="legend-count">${count}</span>` : ''}
-        </button>`;
+        <div class="legend-row">
+          <button class="part-legend-item" data-part-annot="${i}" style="--pc:${pc(i)}">
+            <span class="legend-dot" style="background:${pc(i)}"></span>
+            <span class="legend-name">${esc(p.name || `Part ${p.part_id ?? i+1}`)}</span>
+            ${count ? `<span class="legend-count">${count}</span>` : ''}
+          </button>
+          <button class="legend-add-btn" data-part-add="${i}" style="color:${pc(i)}" title="Add another bbox">＋</button>
+        </div>`;
       }).join('')
     : `<p style="color:var(--text3);font-size:12px;margin:0">No parts yet — click + Add Part</p>`;
 
@@ -665,14 +669,24 @@ function bindAnnotationEvents(view, stepIndex) {
   view.querySelector(`#img-prev-${stepIndex}`)?.addEventListener('click', () => shiftAnnotImg(stepIndex, -1));
   view.querySelector(`#img-next-${stepIndex}`)?.addEventListener('click', () => shiftAnnotImg(stepIndex, +1));
 
-  /* Part legend selection */
+  /* Part legend selection (edit mode — replaces existing bbox for current image) */
   view.querySelectorAll('.part-legend-item').forEach((btn, i) => {
     btn.addEventListener('click', () => {
-      if (annot.partIndex === i && annot.stepIndex === stepIndex) {
+      if (annot.partIndex === i && annot.stepIndex === stepIndex && !annot.addMode) {
         deselectAnnotPart(stepIndex);
       } else {
+        annot.addMode = false;
         selectAnnotPart(stepIndex, i);
       }
+    });
+  });
+
+  /* Legend + button (add mode — draws a new additional bbox) */
+  view.querySelectorAll('.legend-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.partAdd);
+      annot.addMode = true;
+      selectAnnotPart(stepIndex, i);
     });
   });
 
@@ -779,17 +793,31 @@ function initCanvas(stepIndex) {
       const imgIdx  = parseInt(img.dataset.imgIdx || '0');
       const imgName = (stepImgCache[stepIndex] || [])[imgIdx]?.name || '';
       if (!part.bboxes) part.bboxes = [];
-      part.bboxes.push({ img_idx: imgIdx, img_name: imgName, ...bbox });
-      logChange(weg.header?.guide_id, weg.steps[stepIndex]?.step_id, `bbox_added:${part.name}`, '', JSON.stringify(bbox));
+
+      const existingIdx = part.bboxes.findIndex(b => b.img_idx === imgIdx);
+      const entry = { img_idx: imgIdx, img_name: imgName, ...bbox };
+
+      if (!annot.addMode && existingIdx !== -1) {
+        /* Edit mode: replace existing bbox for this image */
+        part.bboxes[existingIdx] = entry;
+        logChange(weg.header?.guide_id, weg.steps[stepIndex]?.step_id, `bbox_updated:${part.name}`, '', JSON.stringify(bbox));
+        showToast(`✓ BBox updated for "${part.name}"`, 'success');
+      } else {
+        /* Add mode: push new bbox */
+        part.bboxes.push(entry);
+        logChange(weg.header?.guide_id, weg.steps[stepIndex]?.step_id, `bbox_added:${part.name}`, '', JSON.stringify(bbox));
+        showToast(`✓ BBox #${part.bboxes.length} added for "${part.name}"`, 'success');
+      }
+      annot.addMode = false;
       bump();
-      /* Refresh legend count */
+
+      /* Refresh legend count badge */
       const legendBtn = document.querySelector(`.part-legend-item[data-part-annot="${annot.partIndex}"]`);
       if (legendBtn) {
         let badge = legendBtn.querySelector('.legend-count');
         if (!badge) { badge = document.createElement('span'); badge.className = 'legend-count'; legendBtn.appendChild(badge); }
         badge.textContent = part.bboxes.length;
       }
-      showToast(`✓ BBox #${part.bboxes.length} added for "${part.name}"`, 'success');
     }
     redrawCanvas(stepIndex);
   });
