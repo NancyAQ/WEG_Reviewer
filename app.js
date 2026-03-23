@@ -106,6 +106,15 @@ function handleFile(file) {
       }
 
       weg = parsed;
+      /* Migrate old single-bbox format → bboxes array */
+      (weg.steps || []).forEach(step => {
+        (step.parts_all || []).forEach(p => {
+          if (!p.bboxes) {
+            p.bboxes = p.bbox ? [{ img_idx: 0, img_name: '', ...p.bbox }] : [];
+          }
+          delete p.bbox;
+        });
+      });
       changeCount = 0;
       imageFiles.clear();
       stepImgCache = {};
@@ -478,18 +487,16 @@ function bindStepEvents(view, index) {
     });
   });
 
-  view.querySelectorAll('.bbox-input').forEach(el => {
-    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
-    el.addEventListener('change', () => {
-      const i = parseInt(el.dataset.part), coord = el.dataset.bbox;
-      const p = weg.steps[index].parts_all?.[i];
-      if (!p) return;
-      if (!p.bbox) p.bbox = { x1:0, y1:0, x2:0, y2:0 };
-      const old = el.dataset.prev ?? '';
-      p.bbox[coord] = parseInt(el.value) || 0;
-      logChange(weg.header?.guide_id, weg.steps[index]?.step_id, `bbox_${coord}:${p.name}`, old, el.value);
-      bump();
-      redrawCanvas(index);  // live update the canvas
+  /* Delete a single bbox entry */
+  view.querySelectorAll('.bbox-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i   = parseInt(btn.dataset.part);
+      const bi  = parseInt(btn.dataset.bboxIdx);
+      const p   = weg.steps[index].parts_all?.[i];
+      if (!p?.bboxes) return;
+      p.bboxes.splice(bi, 1);
+      logChange(weg.header?.guide_id, weg.steps[index]?.step_id, `bbox_deleted:${p.name}`, String(bi), '');
+      bump(); renderStep(index);
     });
   });
 
@@ -508,8 +515,7 @@ function bindStepEvents(view, index) {
     const newId = weg.steps[index].parts_all.length + 1;
     weg.steps[index].parts_all.push({
       part_id: newId, name: 'new_part',
-      bbox: { x1:0, y1:0, x2:100, y2:100 },
-      confidence: 0.9, image_path: ''
+      bboxes: [], confidence: 0.9, image_path: ''
     });
     bump(); renderStep(index);
   });
@@ -564,11 +570,15 @@ function makeAnnotationCard(step, stepIndex) {
   stepImgCache[stepIndex] = imgs;
 
   const legend = parts.length
-    ? parts.map((p, i) => `
+    ? parts.map((p, i) => {
+        const count = (p.bboxes || []).length;
+        return `
         <button class="part-legend-item" data-part-annot="${i}" style="--pc:${pc(i)}">
           <span class="legend-dot" style="background:${pc(i)}"></span>
           <span class="legend-name">${esc(p.name || `Part ${p.part_id ?? i+1}`)}</span>
-        </button>`).join('')
+          ${count ? `<span class="legend-count">${count}</span>` : ''}
+        </button>`;
+      }).join('')
     : `<p style="color:var(--text3);font-size:12px;margin:0">No parts yet — click + Add Part</p>`;
 
   const multiNav = imgs.length > 1 ? `
@@ -607,7 +617,7 @@ function makeAnnotationCard(step, stepIndex) {
             <input class="add-part-name-input" type="text" placeholder="Part name…" />
             <button class="add-part-legend-btn">Add</button>
           </div>
-          <div class="legend-hint">Click to select · draw bbox · click again to deselect</div>
+          <div class="legend-hint">Select · drag to add bbox · draw again for more · click to deselect</div>
         </div>
       </div>
     </div>
@@ -647,8 +657,7 @@ function bindAnnotationEvents(view, stepIndex) {
     const newId = weg.steps[stepIndex].parts_all.length + 1;
     weg.steps[stepIndex].parts_all.push({
       part_id: newId, name,
-      bbox: { x1: 0, y1: 0, x2: 100, y2: 100 },
-      confidence: 0.9, image_path: '',
+      bboxes: [], confidence: 0.9, image_path: '',
     });
     bump(); renderStep(stepIndex);
   });
@@ -739,12 +748,20 @@ function initCanvas(stepIndex) {
     /* Save to WEG */
     const part = weg.steps[stepIndex]?.parts_all?.[annot.partIndex];
     if (part) {
-      const oldBbox = JSON.stringify(part.bbox ?? {});
-      part.bbox = bbox;
-      logChange(weg.header?.guide_id, weg.steps[stepIndex]?.step_id, `bbox:${part.name}`, oldBbox, JSON.stringify(bbox));
+      const imgIdx  = parseInt(img.dataset.imgIdx || '0');
+      const imgName = (stepImgCache[stepIndex] || [])[imgIdx]?.name || '';
+      if (!part.bboxes) part.bboxes = [];
+      part.bboxes.push({ img_idx: imgIdx, img_name: imgName, ...bbox });
+      logChange(weg.header?.guide_id, weg.steps[stepIndex]?.step_id, `bbox_added:${part.name}`, '', JSON.stringify(bbox));
       bump();
-      syncBboxInputs(stepIndex, annot.partIndex, bbox);
-      showToast(`✓ BBox set for "${part.name}"`, 'success');
+      /* Refresh legend count */
+      const legendBtn = document.querySelector(`.part-legend-item[data-part-annot="${annot.partIndex}"]`);
+      if (legendBtn) {
+        let badge = legendBtn.querySelector('.legend-count');
+        if (!badge) { badge = document.createElement('span'); badge.className = 'legend-count'; legendBtn.appendChild(badge); }
+        badge.textContent = part.bboxes.length;
+      }
+      showToast(`✓ BBox #${part.bboxes.length} added for "${part.name}"`, 'success');
     }
     redrawCanvas(stepIndex);
   });
@@ -768,37 +785,40 @@ function redrawCanvas(stepIndex) {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  const imgIdx = parseInt(img.dataset.imgIdx || '0');
+
   parts.forEach((p, i) => {
-    const bbox = p.bbox;
-    if (!bbox || (bbox.x2 <= bbox.x1) || (bbox.y2 <= bbox.y1)) return;
-
-    const x = bbox.x1 * scaleX;
-    const y = bbox.y1 * scaleY;
-    const w = (bbox.x2 - bbox.x1) * scaleX;
-    const h = (bbox.y2 - bbox.y1) * scaleY;
-    const col     = pc(i);
+    const col      = pc(i);
     const isActive = annot.partIndex === i && annot.stepIndex === stepIndex;
+    const label    = p.name || `Part ${p.part_id ?? i+1}`;
 
-    ctx.save();
-    ctx.strokeStyle = col;
-    ctx.fillStyle   = col + (isActive ? '33' : '18');
-    ctx.lineWidth   = isActive ? 3 : 1.5;
-    ctx.setLineDash(isActive ? [] : [4, 3]);
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
-    ctx.restore();
+    (p.bboxes || []).filter(b => b.img_idx === imgIdx).forEach(bbox => {
+      if (bbox.x2 <= bbox.x1 || bbox.y2 <= bbox.y1) return;
 
-    /* Label */
-    const label = p.name || `Part ${p.part_id ?? i+1}`;
-    ctx.save();
-    ctx.font = `${isActive ? 'bold ' : ''}${isActive ? 12 : 11}px Inter, sans-serif`;
-    const tw = ctx.measureText(label).width;
-    const lx = x, ly = y > 20 ? y - 4 : y + h + 14;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(lx, ly - 13, tw + 8, 16);
-    ctx.fillStyle = col;
-    ctx.fillText(label, lx + 4, ly);
-    ctx.restore();
+      const x = bbox.x1 * scaleX;
+      const y = bbox.y1 * scaleY;
+      const w = (bbox.x2 - bbox.x1) * scaleX;
+      const h = (bbox.y2 - bbox.y1) * scaleY;
+
+      ctx.save();
+      ctx.strokeStyle = col;
+      ctx.fillStyle   = col + (isActive ? '33' : '18');
+      ctx.lineWidth   = isActive ? 3 : 1.5;
+      ctx.setLineDash(isActive ? [] : [4, 3]);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+
+      ctx.save();
+      ctx.font = `${isActive ? 'bold ' : ''}${isActive ? 12 : 11}px Inter, sans-serif`;
+      const tw = ctx.measureText(label).width;
+      const lx = x, ly = y > 20 ? y - 4 : y + h + 14;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(lx, ly - 13, tw + 8, 16);
+      ctx.fillStyle = col;
+      ctx.fillText(label, lx + 4, ly);
+      ctx.restore();
+    });
   });
 }
 
@@ -838,13 +858,6 @@ function deselectAnnotPart(stepIndex) {
   redrawCanvas(stepIndex);
 }
 
-/* After drawing, sync bbox inputs without re-rendering the whole step */
-function syncBboxInputs(stepIndex, partIndex, bbox) {
-  ['x1','y1','x2','y2'].forEach(k => {
-    const el = document.querySelector(`.bbox-input[data-part="${partIndex}"][data-bbox="${k}"]`);
-    if (el) el.value = bbox[k];
-  });
-}
 
 /* Switch image in multi-image steps */
 function shiftAnnotImg(stepIndex, delta) {
@@ -928,8 +941,17 @@ function makeParts(parts, stepIndex) {
   }
 
   const cards = parts.map((p, i) => {
-    const bb   = p.bbox || {};
-    const conf = p.confidence ?? 0;
+    const bboxes = p.bboxes || [];
+    const bboxRows = bboxes.length
+      ? bboxes.map((b, bi) => `
+        <div class="bbox-entry">
+          <span class="bbox-img-tag">img ${b.img_idx}${b.img_name ? ' · ' + esc(b.img_name) : ''}</span>
+          <span class="bbox-coords">${b.x1}, ${b.y1} → ${b.x2}, ${b.y2}</span>
+          <button class="bbox-del-btn" data-part="${i}" data-bbox-idx="${bi}">×</button>
+        </div>`).join('')
+      : `<p style="color:var(--text3);font-size:11px;margin:4px 0">No boxes drawn yet — select this part above and drag on the image</p>`;
+
+    const conf2 = p.confidence ?? 0;
     return `
     <div class="part-card" style="border-left: 3px solid ${pc(i)}">
       <div class="part-card-top">
@@ -943,20 +965,14 @@ function makeParts(parts, stepIndex) {
       <div class="part-field">
         <div class="part-label">Confidence</div>
         <div class="conf-bar-wrap">
-          <div class="conf-bar"><div class="conf-bar-fill" style="width:${Math.round(conf*100)}%"></div></div>
+          <div class="conf-bar"><div class="conf-bar-fill" style="width:${Math.round(conf2*100)}%"></div></div>
           <input class="part-input" type="number" min="0" max="1" step="0.01"
-            value="${conf}" data-part="${i}" data-field="confidence" style="width:70px;text-align:right" />
+            value="${conf2}" data-part="${i}" data-field="confidence" style="width:70px;text-align:right" />
         </div>
       </div>
       <div class="part-field">
-        <div class="part-label">Bounding Box <span style="color:var(--text3);font-size:9px">(or draw above)</span></div>
-        <div class="bbox-row">
-          ${['x1','y1','x2','y2'].map(k => `
-          <div class="bbox-wrap">
-            <span class="bbox-lbl">${k}</span>
-            <input class="bbox-input" type="number" value="${bb[k]??0}" data-part="${i}" data-bbox="${k}" />
-          </div>`).join('')}
-        </div>
+        <div class="part-label">Bounding Boxes <span style="color:var(--text3);font-size:9px">${bboxes.length} drawn</span></div>
+        <div class="bbox-list">${bboxRows}</div>
       </div>
       <div class="part-field">
         <div class="part-label">Image Path</div>
@@ -1054,16 +1070,16 @@ async function saveToCloud() {
         ctx.drawImage(imgEl, 0, 0);
 
         (step.parts_all || []).forEach((p, i) => {
-          if (!p.bbox) return;
-          const { x1, y1, x2, y2 } = p.bbox;
-          const col = pc(i);
+          const col   = pc(i);
+          const label = p.name || `Part ${p.part_id ?? i + 1}`;
+          (p.bboxes || []).filter(b => b.img_idx === imgN).forEach(bbox => {
+          const { x1, y1, x2, y2 } = bbox;
           ctx.save();
           ctx.strokeStyle = col;
           ctx.fillStyle   = col + '22';
           ctx.lineWidth   = 2;
           ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
           ctx.fillRect(x1,   y1, x2 - x1, y2 - y1);
-          const label = p.name || `Part ${p.part_id ?? i + 1}`;
           ctx.font      = 'bold 13px sans-serif';
           const tw      = ctx.measureText(label).width;
           ctx.fillStyle = '#000a';
@@ -1071,7 +1087,8 @@ async function saveToCloud() {
           ctx.fillStyle = col;
           ctx.fillText(label, x1 + 5, y1 - 4);
           ctx.restore();
-        });
+          });  // end bboxes.forEach
+        });    // end parts_all.forEach
 
         const b64      = offCanvas.toDataURL('image/jpeg', 0.85).split(',')[1];
         const taskSlug = (step.task_name || `step_${stepId}`)

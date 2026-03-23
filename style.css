@@ -944,6 +944,58 @@ textarea.editable {
   flex: 1;
 }
 
+.legend-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--pc, var(--accent));
+  color: white;
+  border-radius: 8px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+.bbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.bbox-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.bbox-img-tag {
+  color: var(--text3);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.bbox-coords {
+  color: var(--text2);
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.bbox-del-btn {
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.bbox-del-btn:hover { color: #ef4444; }
+
 .legend-hint {
   font-size: 10px;
   color: var(--text3);
