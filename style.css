@@ -839,7 +839,8 @@ textarea.editable {
   border-radius: 8px;
   overflow: hidden;
   background: #000;
-  width: 100%;
+  width: 60%;
+  max-width: 480px;
   line-height: 0;
 }
 
