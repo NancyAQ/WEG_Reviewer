@@ -487,6 +487,23 @@ function bindStepEvents(view, index) {
     });
   });
 
+  /* Editable bbox coord inputs */
+  view.querySelectorAll('.bbox-input').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
+    el.addEventListener('change', () => {
+      const i  = parseInt(el.dataset.part);
+      const bi = parseInt(el.dataset.bboxIdx);
+      const k  = el.dataset.bbox;
+      const p  = weg.steps[index].parts_all?.[i];
+      if (!p?.bboxes?.[bi]) return;
+      const old = el.dataset.prev ?? '';
+      p.bboxes[bi][k] = parseInt(el.value) || 0;
+      logChange(weg.header?.guide_id, weg.steps[index]?.step_id, `bbox_edit:${p.name}[${bi}].${k}`, old, el.value);
+      bump();
+      redrawCanvas(index);
+    });
+  });
+
   /* Delete a single bbox entry */
   view.querySelectorAll('.bbox-del-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -497,6 +514,17 @@ function bindStepEvents(view, index) {
       p.bboxes.splice(bi, 1);
       logChange(weg.header?.guide_id, weg.steps[index]?.step_id, `bbox_deleted:${p.name}`, String(bi), '');
       bump(); renderStep(index);
+    });
+  });
+
+  /* + button: activate draw mode for that part */
+  view.querySelectorAll('.bbox-add-draw-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.part);
+      selectAnnotPart(index, i);
+      document.getElementById(`annot-canvas-${index}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      showToast(`Draw a bbox for "${weg.steps[index].parts_all[i]?.name}"`, 'info');
     });
   });
 
@@ -945,17 +973,23 @@ function makeParts(parts, stepIndex) {
     const bboxRows = bboxes.length
       ? bboxes.map((b, bi) => `
         <div class="bbox-entry">
-          <span class="bbox-img-tag">img ${b.img_idx}${b.img_name ? ' · ' + esc(b.img_name) : ''}</span>
-          <span class="bbox-coords">${b.x1}, ${b.y1} → ${b.x2}, ${b.y2}</span>
+          <span class="bbox-img-tag">img ${b.img_idx}</span>
+          ${['x1','y1','x2','y2'].map(k => `
+            <div class="bbox-wrap">
+              <span class="bbox-lbl">${k}</span>
+              <input class="bbox-input" type="number" value="${b[k]??0}"
+                data-part="${i}" data-bbox-idx="${bi}" data-bbox="${k}" />
+            </div>`).join('')}
           <button class="bbox-del-btn" data-part="${i}" data-bbox-idx="${bi}">×</button>
         </div>`).join('')
-      : `<p style="color:var(--text3);font-size:11px;margin:4px 0">No boxes drawn yet — select this part above and drag on the image</p>`;
+      : `<p style="color:var(--text3);font-size:11px;margin:4px 0">No boxes yet — click + next to the part name or draw on the image above</p>`;
 
     const conf2 = p.confidence ?? 0;
     return `
     <div class="part-card" style="border-left: 3px solid ${pc(i)}">
       <div class="part-card-top">
         <span class="part-id-badge" style="background:${pc(i)}">Part #${p.part_id ?? i+1}</span>
+        <button class="bbox-add-draw-btn" data-part="${i}" title="Draw another bbox for this part" style="color:${pc(i)}">＋</button>
         <button class="part-del-btn" data-part="${i}">×</button>
       </div>
       <div class="part-field">

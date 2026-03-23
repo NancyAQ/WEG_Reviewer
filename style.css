@@ -996,6 +996,48 @@ textarea.editable {
 }
 .bbox-del-btn:hover { color: #ef4444; }
 
+.bbox-add-draw-btn {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 1px 6px;
+  cursor: pointer;
+  opacity: 0.8;
+  margin-left: auto;
+  transition: opacity 0.15s;
+}
+.bbox-add-draw-btn:hover { opacity: 1; }
+
+.bbox-entry {
+  flex-wrap: wrap;
+}
+
+.bbox-entry .bbox-wrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.bbox-entry .bbox-lbl {
+  font-size: 9px;
+  color: var(--text3);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.bbox-entry .bbox-input {
+  width: 52px;
+  padding: 2px 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+}
+.bbox-entry .bbox-input:focus { outline: none; border-color: var(--accent); }
+
 .legend-hint {
   font-size: 10px;
   color: var(--text3);
